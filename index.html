@@ -1563,35 +1563,36 @@ async function testAndSaveGist() {
     });
     if (!res.ok) throw new Error('HTTP ' + res.status + ' — check your token and Gist ID');
     const data = await res.json();
-    // Save credentials
+    const fileExists = !!data.files?.['coins.json'];
+    // Save credentials BEFORE loading so loadFromGist() can read them
     localStorage.setItem('gist_token', token);
     localStorage.setItem('gist_id', gistId);
     resultEl.textContent = '✓ Connected! Loading your data…'; resultEl.style.color='#155724';
-    // Check if gist has existing coins data
-    const content = data.files?.['coins.json']?.content;
-    if (content) {
-      try {
-        const parsed = JSON.parse(content);
-        if (parsed.length && confirm(`Found ${parsed.length} coins in your Gist. Load them? (Cancel to push your current data instead)`)) {
-          coins = parsed;
-          localStorage.setItem('coinCollection', JSON.stringify(coins));
-          applyFilters();
-        } else {
-          // Push current data to Gist
-          await fetch(`https://api.github.com/gists/${gistId}`, {
-            method: 'PATCH',
-            headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ files: { 'coins.json': { content: JSON.stringify(coins) } } })
-          });
-        }
-      } catch(e) {}
+
+    if (fileExists) {
+      // Use loadFromGist() — it transparently handles the >1MB truncation case
+      // by fetching the full content from raw_url. Parsing the API's inline
+      // content directly would fail on large (truncated) gists.
+      const parsed = await loadFromGist();
+      if (parsed === null) {
+        // Load/parse failed — DO NOT push local data, that would overwrite
+        // the real collection with seed/local data. Surface the error instead.
+        throw new Error('Could not read coins.json from the Gist. Your local data was NOT pushed (to avoid overwriting). Try again.');
+      }
+      if (parsed.length && confirm(`Found ${parsed.length} coins in your Gist. Load them? (Cancel to push your current data instead)`)) {
+        coins = parsed;
+        localStorage.setItem('coinCollection', JSON.stringify(coins));
+        applyFilters();
+      } else if (!parsed.length) {
+        // Gist file is empty — safe to push current data
+        await saveToGist();
+      } else {
+        // User chose to overwrite the Gist with their current local data
+        await saveToGist();
+      }
     } else {
-      // Empty Gist — push current data
-      await fetch(`https://api.github.com/gists/${gistId}`, {
-        method: 'PATCH',
-        headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: { 'coins.json': { content: JSON.stringify(coins) } } })
-      });
+      // No coins.json yet — create it from current data
+      await saveToGist();
     }
     setSyncStatus('synced');
     setTimeout(() => closeModal('gistModal'), 800);
