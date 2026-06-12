@@ -414,8 +414,19 @@ async function loadFromGist() {
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    const content = data.files?.['coins.json']?.content;
-    if (!content) throw new Error('coins.json not found in Gist');
+    const fileInfo = data.files?.['coins.json'];
+    if (!fileInfo) throw new Error('coins.json not found in Gist');
+    let content;
+    if (fileInfo.truncated) {
+      // File exceeded ~1MB — fetch the full content from raw_url
+      const rawRes = await fetch(fileInfo.raw_url, {
+        headers: { 'Authorization': `token ${token}` }
+      });
+      if (!rawRes.ok) throw new Error('raw fetch HTTP ' + rawRes.status);
+      content = await rawRes.text();
+    } else {
+      content = fileInfo.content;
+    }
     setSyncStatus('synced');
     return JSON.parse(content);
   } catch(e) {
