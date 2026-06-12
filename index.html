@@ -418,10 +418,13 @@ async function loadFromGist() {
     if (!fileInfo) throw new Error('coins.json not found in Gist');
     let content;
     if (fileInfo.truncated) {
-      // File exceeded ~1MB — fetch the full content from raw_url
-      const rawRes = await fetch(fileInfo.raw_url, {
-        headers: { 'Authorization': `token ${token}` }
-      });
+      // File exceeded GitHub's ~1MB API limit — fetch the full content from
+      // raw_url. NOTE: no Authorization header — gist.githubusercontent.com
+      // serves the raw URL with CORS (access-control-allow-origin: *) but only
+      // for "simple" requests. Adding an Authorization header triggers a CORS
+      // preflight that the host does not honor, which silently blocks the read.
+      // The raw_url is unguessable, so it works anonymously even for secret gists.
+      const rawRes = await fetch(fileInfo.raw_url);
       if (!rawRes.ok) throw new Error('raw fetch HTTP ' + rawRes.status);
       content = await rawRes.text();
     } else {
