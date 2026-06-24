@@ -247,10 +247,10 @@ td a:hover { text-decoration: underline; }
 <div class="header">
   <img src="./logo.png" alt="Brett's Coin Collection" class="header-logo">
   <div class="header-actions">
-    <div class="view-toggle">
-      <button class="btn btn-outline active" id="btnGrid" onclick="setView('grid')">⊞ <span class="btn-label">Grid</span></button>
-      <button class="btn btn-outline" id="btnPage" onclick="setView('page')">📖 <span class="btn-label">Page</span></button>
-    </div>
+    <select id="viewSelect" onchange="setView(this.value)">
+      <option value="grid">Grid</option>
+      <option value="page">Page</option>
+    </select>
     <select id="filterStatus" onchange="applyFilters()">
       <option value="all">All Coins</option>
       <option value="Own">Owned</option>
@@ -856,8 +856,8 @@ function setView(v) {
   document.getElementById('gridView').style.display  = v==='grid'  ? 'grid'  : 'none';
   document.getElementById('tableView').style.display = v==='table' ? 'block' : 'none';
   document.getElementById('pageView').style.display  = v==='page'  ? 'block' : 'none';
-  document.getElementById('btnGrid').classList.toggle('active',  v==='grid');
-  document.getElementById('btnPage').classList.toggle('active',  v==='page');
+  const sel = document.getElementById('viewSelect');
+  if (sel && (v==='grid' || v==='page')) sel.value = v;
   applyFilters();
 }
 
@@ -1775,7 +1775,7 @@ document.getElementById('lightbox').addEventListener('click', function(e) {
   if (e.target === this) closeLightbox();
 });
 
-populateDenomFilter(); populateEditDenom(); applyFilters();
+populateDenomFilter(); populateEditDenom(); setView('grid');
 
 // Async Gist load on startup + periodic poll
 (async () => {
