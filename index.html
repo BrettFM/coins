@@ -1103,8 +1103,7 @@ function printPage(book, page) {
   const detailPageTitle = `Book ${book}, Page ${page}${pageName ? ' \u2013 ' + pageName : ''}`;
 
   // ---- OPEN PRINT WINDOW WITH BOTH PAGES ----
-  const win = window.open('', '_blank', 'width=900,height=700');
-  win.document.write(`<!DOCTYPE html><html><head>
+  const html = `<!DOCTYPE html><html><head>
     <meta charset="UTF-8">
     <title>Coin Collection — Book ${book}, Page ${page}</title>
     <style>
@@ -1162,9 +1161,33 @@ function printPage(book, page) {
       <div class="print-page-title">${esc(detailPageTitle)}</div>
       <div class="print-grid">${slotsHtml}</div>
     </div>
-    <script>window.onload = function(){ window.print(); }<\/script>
-  </body></html>`);
-  win.document.close();
+  </body></html>`;
+  printHtmlDoc(html);
+}
+
+// Render a full HTML document into a hidden same-origin iframe and print it.
+// Avoids window.open('','_blank') popups, which ad/popup/privacy extensions
+// frequently blank out in a normal Chrome profile (works in incognito only
+// because extensions are disabled there). The iframe is removed after printing.
+function printHtmlDoc(html) {
+  const old = document.getElementById('printFrame');
+  if (old) old.remove();
+  const iframe = document.createElement('iframe');
+  iframe.id = 'printFrame';
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(iframe);
+  const cw = iframe.contentWindow;
+  cw.document.open();
+  cw.document.write(html);
+  cw.document.close();
+  const fire = () => {
+    try { cw.focus(); cw.print(); } catch(e) { console.error('print error:', e); }
+    // Leave the frame around briefly so the print dialog can read it, then clean up.
+    setTimeout(() => iframe.remove(), 1000);
+  };
+  // Wait for layout/images (base64 data: URLs) before printing.
+  if (cw.document.readyState === 'complete') setTimeout(fire, 60);
+  else cw.onload = () => setTimeout(fire, 60);
 }
 
 // ---- DETAIL MODAL ----
