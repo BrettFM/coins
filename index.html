@@ -460,6 +460,10 @@ async function saveToGist() {
   if (!token || !gistId) return;
   _pendingSave = false;
   setSyncStatus('saving');
+  // Defensive: never persist inline base64 into coins.json. Idempotent — moves
+  // anything still inline (e.g. from stale localStorage) into the image store
+  // and sets _imagesDirty so images.json rides along in the same PATCH.
+  migrateInlineImages(coins);
   // When images changed, write images.json in the SAME PATCH as coins.json so
   // the two never drift (a coins.json referencing img: keys not yet uploaded
   // would show broken images). A multi-file Gist PATCH is atomic.
@@ -511,6 +515,7 @@ window.addEventListener('beforeunload', () => {
   clearTimeout(_gistSaveTimer);
   const { token, gistId } = getGistConfig();
   if (!token || !gistId) return;
+  migrateInlineImages(coins); // defensive: never flush inline base64 to coins.json
   const files = { 'coins.json': { content: JSON.stringify(coins) } };
   if (_imagesDirty) files['images.json'] = { content: JSON.stringify(coinImages) };
   const payload = JSON.stringify({ files });
