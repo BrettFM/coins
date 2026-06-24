@@ -45,7 +45,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .header-actions .sync-status { display: inline-flex; align-items: center; line-height: 1; }
 .header-actions .btn { padding: 0 14px; }
 .header-actions .btn-sm { padding: 0 11px; }
-.header-actions select { padding: 0 26px 0 10px; border: 1px solid var(--card-border); }
+.header-actions select { padding: 0 10px; border: 1px solid var(--card-border); appearance: none; -webkit-appearance: none; -moz-appearance: none; background-image: none; text-align: center; }
 .header-actions .sync-status { padding: 0 12px; font-weight: 600; border: 1px solid transparent; }
 /* Join Grid/Page into a segmented control */
 .view-toggle { gap: 0; }
@@ -247,16 +247,14 @@ td a:hover { text-decoration: underline; }
 <div class="header">
   <img src="./logo.png" alt="Brett's Coin Collection" class="header-logo">
   <div class="header-actions">
-    <select id="viewSelect" autocomplete="off" onchange="setView(this.value)">
-      <option value="grid">Grid</option>
-      <option value="page">Page</option>
+    <button class="btn btn-outline active" id="btnGrid" onclick="setView('grid')">Grid</button>
+    <button class="btn btn-outline" id="btnPage" onclick="setView('page')">Page</button>
+    <select id="filterStatus" autocomplete="off" onchange="applyFilters()">
+      <option value="all">All</option>
+      <option value="Own">Own</option>
+      <option value="Need">Need</option>
     </select>
-    <select id="filterStatus" onchange="applyFilters()">
-      <option value="all">All Coins</option>
-      <option value="Own">Owned</option>
-      <option value="Need">Wish List</option>
-    </select>
-    <select id="sortBy" onchange="applyFilters()">
+    <select id="sortBy" autocomplete="off" onchange="applyFilters()">
       <option value="book">Book</option>
       <option value="value">Value</option>
     </select>
@@ -856,8 +854,8 @@ function setView(v) {
   document.getElementById('gridView').style.display  = v==='grid'  ? 'grid'  : 'none';
   document.getElementById('tableView').style.display = v==='table' ? 'block' : 'none';
   document.getElementById('pageView').style.display  = v==='page'  ? 'block' : 'none';
-  const sel = document.getElementById('viewSelect');
-  if (sel && (v==='grid' || v==='page')) sel.value = v;
+  document.getElementById('btnGrid').classList.toggle('active', v==='grid');
+  document.getElementById('btnPage').classList.toggle('active', v==='page');
   applyFilters();
 }
 
