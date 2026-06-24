@@ -404,6 +404,20 @@ function setSyncStatus(status) {
   el.textContent = label;
   el.className = 'sync-status ' + cls;
 }
+// Read one file from a Gist API response. If GitHub truncated it (>~1MB), fetch
+// the full content from raw_url. NO Authorization header — gist.githubusercontent.com
+// serves raw with CORS for simple GETs, but an auth header triggers a CORS
+// preflight it won't honor. The raw_url is unguessable, so it works anonymously
+// even for secret gists.
+async function readGistFile(fileInfo) {
+  if (fileInfo.truncated) {
+    const rawRes = await fetch(fileInfo.raw_url);
+    if (!rawRes.ok) throw new Error('raw fetch HTTP ' + rawRes.status);
+    return await rawRes.text();
+  }
+  return fileInfo.content;
+}
+
 async function loadFromGist() {
   const { token, gistId } = getGistConfig();
   if (!token || !gistId) return null;
@@ -416,22 +430,22 @@ async function loadFromGist() {
     const data = await res.json();
     const fileInfo = data.files?.['coins.json'];
     if (!fileInfo) throw new Error('coins.json not found in Gist');
-    let content;
-    if (fileInfo.truncated) {
-      // File exceeded GitHub's ~1MB API limit — fetch the full content from
-      // raw_url. NOTE: no Authorization header — gist.githubusercontent.com
-      // serves the raw URL with CORS (access-control-allow-origin: *) but only
-      // for "simple" requests. Adding an Authorization header triggers a CORS
-      // preflight that the host does not honor, which silently blocks the read.
-      // The raw_url is unguessable, so it works anonymously even for secret gists.
-      const rawRes = await fetch(fileInfo.raw_url);
-      if (!rawRes.ok) throw new Error('raw fetch HTTP ' + rawRes.status);
-      content = await rawRes.text();
-    } else {
-      content = fileInfo.content;
+    const content = await readGistFile(fileInfo);
+    // Load the separate image store (may not exist yet on a pre-migration gist).
+    const imgInfo = data.files?.['images.json'];
+    if (imgInfo) {
+      try {
+        const imgContent = await readGistFile(imgInfo);
+        coinImages = JSON.parse(imgContent) || {};
+        persistImagesLocal();
+      } catch(e) { console.error('images.json load error:', e); }
     }
+    const parsed = JSON.parse(content);
+    // Move any still-inline base64 images out of coins.json. Idempotent: once
+    // migrated there are no data: URLs left, so re-runs (e.g. polling) are no-ops.
+    if (migrateInlineImages(parsed)) scheduleGistSave();
     setSyncStatus('synced');
-    return JSON.parse(content);
+    return parsed;
   } catch(e) {
     console.error('Gist load error:', e);
     setSyncStatus('error');
@@ -446,6 +460,12 @@ async function saveToGist() {
   if (!token || !gistId) return;
   _pendingSave = false;
   setSyncStatus('saving');
+  // When images changed, write images.json in the SAME PATCH as coins.json so
+  // the two never drift (a coins.json referencing img: keys not yet uploaded
+  // would show broken images). A multi-file Gist PATCH is atomic.
+  const savingImages = _imagesDirty;
+  const files = { 'coins.json': { content: JSON.stringify(coins) } };
+  if (savingImages) files['images.json'] = { content: JSON.stringify(coinImages) };
   try {
     const res = await fetch(`https://api.github.com/gists/${gistId}`, {
       method: 'PATCH',
@@ -454,9 +474,10 @@ async function saveToGist() {
         'Accept': 'application/vnd.github.v3+json',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ files: { 'coins.json': { content: JSON.stringify(coins) } } })
+      body: JSON.stringify({ files })
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (savingImages) _imagesDirty = false;
     setSyncStatus('synced');
   } catch(e) {
     console.error('Gist save error:', e);
@@ -490,7 +511,9 @@ window.addEventListener('beforeunload', () => {
   clearTimeout(_gistSaveTimer);
   const { token, gistId } = getGistConfig();
   if (!token || !gistId) return;
-  const payload = JSON.stringify({ files: { 'coins.json': { content: JSON.stringify(coins) } } });
+  const files = { 'coins.json': { content: JSON.stringify(coins) } };
+  if (_imagesDirty) files['images.json'] = { content: JSON.stringify(coinImages) };
+  const payload = JSON.stringify({ files });
   try {
     const xhr = new XMLHttpRequest();
     xhr.open('PATCH', `https://api.github.com/gists/${gistId}`, false);
@@ -534,14 +557,59 @@ function getImageId(coin) {
   return getTypeImageId(coin);
 }
 
+// ---- IMAGE STORE ----
+// Custom coin images are kept OUT of coins.json (they are large base64 blobs).
+// coins.json stores only a lightweight reference "img:<key>"; the actual base64
+// lives in a separate Gist file images.json, mirrored to localStorage. External
+// http(s) URLs and any legacy inline data: URLs still resolve directly.
+let coinImages = loadImagesLocal();
+let _imagesDirty = false;
+function loadImagesLocal() { try { const s = localStorage.getItem('coinImages'); if (s) return JSON.parse(s); } catch(e){} return {}; }
+function persistImagesLocal() { try { localStorage.setItem('coinImages', JSON.stringify(coinImages)); } catch(e){} }
+function resolveImg(val) {
+  if (!val || typeof val !== 'string') return null;
+  if (val.startsWith('img:')) return coinImages[val.slice(4)] || null;
+  return val; // data: URL (legacy) or external http(s) URL
+}
+// Turn a freshly entered value into what gets stored on the coin. Base64 blobs
+// are moved into the image store and replaced with an "img:<key>" reference;
+// external URLs are stored as-is.
+function keyImage(val, coinId, side) {
+  if (!val) return null;
+  if (val.startsWith('data:')) {
+    const k = 'c' + coinId + '_' + side;
+    coinImages[k] = val; _imagesDirty = true; persistImagesLocal();
+    return 'img:' + k;
+  }
+  return val;
+}
+// One-time, idempotent: pull any inline base64 still living in coins.json out
+// into the image store. Returns how many were moved.
+function migrateInlineImages(arr) {
+  let n = 0;
+  arr.forEach(c => {
+    [['_custom_obverse','obv'], ['_custom_reverse','rev']].forEach(([field, side]) => {
+      const v = c[field];
+      if (typeof v === 'string' && v.startsWith('data:')) {
+        const k = 'c' + c['_id'] + '_' + side;
+        coinImages[k] = v; c[field] = 'img:' + k; n++;
+      }
+    });
+  });
+  if (n) { persistImagesLocal(); _imagesDirty = true; }
+  return n;
+}
+
 function getObverseUrl(coin) {
-  if (coin['_custom_obverse']) return coin['_custom_obverse'];
+  const c = resolveImg(coin['_custom_obverse']);
+  if (c) return c;
   const id = getImageId(coin);
   return id ? `https://images.pcgs.com/CoinFacts/detail/${id}_1.jpg` : null;
 }
 
 function getReverseUrl(coin) {
-  if (coin['_custom_reverse']) return coin['_custom_reverse'];
+  const c = resolveImg(coin['_custom_reverse']);
+  if (c) return c;
   const id = getImageId(coin);
   return id ? `https://images.pcgs.com/CoinFacts/detail/${id}_2.jpg` : null;
 }
@@ -1010,8 +1078,8 @@ function printPage(book, page) {
         </div>
       </div>`;
     } else {
-      const obvUrl = coin['_custom_obverse'] || '';
-      const revUrl = coin['_custom_reverse'] || '';
+      const obvUrl = resolveImg(coin['_custom_obverse']) || '';
+      const revUrl = resolveImg(coin['_custom_reverse']) || '';
 
       slotsHtml += `<div class="print-slot">
         <div class="print-slot-img">${mkImg(obvUrl,'OBV')}${mkImg(revUrl,'REV')}</div>
@@ -1233,8 +1301,8 @@ function openEditModal(id) {
   document.getElementById('f_gradedby').value = coin['Graded By']||'';
   document.getElementById('f_cac').value = coin['CAC']?'true':'false';
   // Custom images
-  const obvUrl = coin['_custom_obverse']||'';
-  const revUrl = coin['_custom_reverse']||'';
+  const obvUrl = resolveImg(coin['_custom_obverse'])||'';
+  const revUrl = resolveImg(coin['_custom_reverse'])||'';
   document.getElementById('f_obv_url').value = obvUrl;
   document.getElementById('f_rev_url').value = revUrl;
   if (obvUrl) { document.getElementById('f_obv_preview').src=obvUrl; document.getElementById('f_obv_preview_wrap').style.display=''; }
@@ -1251,8 +1319,13 @@ function saveCoin() {
   const pcgsLink=document.getElementById('f_pcgslink').value;
   const m=pcgsLink.match(/\/Detail\/(\d+)/i);
   const pcgsId=m?m[1]:null;
-  const obvUrl=document.getElementById('f_obv_url').value.trim()||null;
-  const revUrl=document.getElementById('f_rev_url').value.trim()||null;
+  const rawObv=document.getElementById('f_obv_url').value.trim()||null;
+  const rawRev=document.getElementById('f_rev_url').value.trim()||null;
+  // Resolve the coin id up front so uploaded base64 can be keyed into the image
+  // store (kept out of coins.json). External URLs pass through unchanged.
+  const targetId = editingId!==null ? editingId : (Math.max(0,...coins.map(c=>c['_id']))+1);
+  const obvUrl = keyImage(rawObv, targetId, 'obv');
+  const revUrl = keyImage(rawRev, targetId, 'rev');
   const data={
     'Actual Coin Name':document.getElementById('f_name').value,
     'General Type':document.getElementById('f_type').value,
@@ -1290,7 +1363,7 @@ function saveCoin() {
     const idx=coins.findIndex(c=>c['_id']===editingId);
     if(idx!==-1) coins[idx]={...coins[idx],...data};
   } else {
-    coins.push({...data,'_id':Math.max(0,...coins.map(c=>c['_id']))+1});
+    coins.push({...data,'_id':targetId});
   }
   saveCoins(coins); closeModal('editModal'); applyFilters();
 }
@@ -1361,7 +1434,10 @@ function exportXLSX() {
   // --- Sheet 1: Collection ---
   const headers = XLSX_COLS.map(c => c.h);
   const rows = coins.map(coin => XLSX_COLS.map(c => {
-    const v = coin[c.k];
+    // Resolve image references back to their actual URL/base64 so the export
+    // round-trips (coins.json now stores an "img:<key>" pointer, not the blob).
+    const v = (c.k === '_custom_obverse' || c.k === '_custom_reverse')
+      ? resolveImg(coin[c.k]) : coin[c.k];
     if (v === null || v === undefined) return '';
     const s = String(v);
     return s.length > 32767 ? s.slice(0, 32767) : v;
