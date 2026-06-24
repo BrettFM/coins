@@ -1211,14 +1211,29 @@ function printHtmlDoc(html) {
   cw.document.open();
   cw.document.write(html);
   cw.document.close();
+  let fired = false;
   const fire = () => {
+    if (fired) return; fired = true;
     try { cw.focus(); cw.print(); } catch(e) { console.error('print error:', e); }
     // Leave the frame around briefly so the print dialog can read it, then clean up.
     setTimeout(() => iframe.remove(), 1000);
   };
-  // Wait for layout/images (base64 data: URLs) before printing.
-  if (cw.document.readyState === 'complete') setTimeout(fire, 60);
-  else cw.onload = () => setTimeout(fire, 60);
+  // Wait for ALL images to finish loading (or error) before printing, so the
+  // cover/large images aren't captured as placeholders. Falls back after 4s in
+  // case an image hangs.
+  const waitImages = () => {
+    const imgs = Array.from(cw.document.images || []);
+    let pending = imgs.length;
+    if (!pending) return fire();
+    const tick = () => { if (--pending <= 0) fire(); };
+    imgs.forEach(img => {
+      if (img.complete) tick();
+      else { img.addEventListener('load', tick); img.addEventListener('error', tick); }
+    });
+    setTimeout(fire, 4000); // safety net
+  };
+  if (cw.document.readyState === 'complete') setTimeout(waitImages, 30);
+  else cw.onload = () => setTimeout(waitImages, 30);
 }
 
 // ---- DETAIL MODAL ----
