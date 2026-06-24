@@ -22,10 +22,21 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .header { background: #ffffff; border-bottom: 3px solid #c9a84c; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 .header h1 { font-size: 1.4rem; color: #c9a84c; display: flex; align-items: center; gap: 10px; font-weight: 700; }
 .header-logo { height: 52px; width: auto; max-width: 100%; display: block; }
-@media (max-width: 600px) { .header-logo { height: 40px; } }
+@media (max-width: 600px) {
+  .header-logo { height: 38px; }
+  .header { padding: 10px 12px; }
+  .header .btn-label { display: none; }
+  .header-actions { gap: 6px; }
+}
 .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .header-actions select { background: var(--input-bg); border: 1px solid var(--card-border); color: var(--text); padding: 6px 8px; border-radius: 6px; font-size: 0.8rem; font-family: inherit; }
 .header-actions select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(154,117,32,0.15); }
+#syncStatus { cursor: pointer; }
+.kebab-wrap { position: relative; display: inline-flex; }
+.kebab-menu { display: none; position: absolute; right: 0; top: calc(100% + 6px); background: #fff; border: 1px solid var(--card-border); border-radius: 8px; box-shadow: var(--shadow-hover); min-width: 190px; z-index: 60; overflow: hidden; }
+.kebab-menu.open { display: block; }
+.kebab-menu button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 10px 14px; font-size: 0.85rem; color: var(--text); cursor: pointer; }
+.kebab-menu button:hover { background: var(--bg-alt); }
 .stats-bar { display: flex; gap: 14px; padding: 16px 24px; flex-wrap: wrap; background: var(--bg-alt); border-bottom: 1px solid var(--card-border); }
 .stat-card { flex: 1; min-width: 130px; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px 16px; box-shadow: var(--shadow); }
 .stat-card .label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
@@ -222,8 +233,8 @@ td a:hover { text-decoration: underline; }
   <img src="./logo.png" alt="Brett's Coin Collection" class="header-logo">
   <div class="header-actions">
     <div class="view-toggle">
-      <button class="btn btn-outline active" id="btnGrid" onclick="setView('grid')">⊞ Grid</button>
-      <button class="btn btn-outline" id="btnPage" onclick="setView('page')">📖 Page</button>
+      <button class="btn btn-outline active" id="btnGrid" onclick="setView('grid')">⊞ <span class="btn-label">Grid</span></button>
+      <button class="btn btn-outline" id="btnPage" onclick="setView('page')">📖 <span class="btn-label">Page</span></button>
     </div>
     <select id="filterStatus" onchange="applyFilters()">
       <option value="all">All Coins</option>
@@ -239,10 +250,15 @@ td a:hover { text-decoration: underline; }
       <option value="pl">Sort: P/L ↓</option>
       <option value="name">Sort: Name</option>
     </select>
-    <span id="syncStatus" class="sync-status sync-offline">○ Local only</span>
-    <button class="btn btn-secondary btn-sm" onclick="openGistModal()">☁ Sync</button>
-    <button class="btn btn-secondary btn-sm" onclick="openIOModal()">⬆⬇ Export / Import</button>
-    <button class="btn btn-gold" onclick="openAddModal()">+ Add Coin</button>
+    <span id="syncStatus" class="sync-status sync-offline" onclick="openGistModal()" title="Sync settings">○ Local only</span>
+    <div class="kebab-wrap">
+      <button class="btn btn-secondary btn-sm" onclick="toggleKebab(event)" aria-label="More actions">⋯</button>
+      <div class="kebab-menu" id="kebabMenu">
+        <button onclick="closeKebab();openIOModal()">⬆⬇ Export / Import</button>
+        <button onclick="closeKebab();openGistModal()">☁ Sync settings</button>
+      </div>
+    </div>
+    <button class="btn btn-gold" onclick="openAddModal()">+ <span class="btn-label">Add Coin</span></button>
   </div>
 </div>
 <div class="stats-bar" id="statsBar"></div>
@@ -1256,6 +1272,11 @@ function openDetail(id) {
 }
 
 // ---- ADD / EDIT ----
+// Overflow (⋯) menu for secondary actions
+function toggleKebab(e) { e.stopPropagation(); document.getElementById('kebabMenu').classList.toggle('open'); }
+function closeKebab() { const m = document.getElementById('kebabMenu'); if (m) m.classList.remove('open'); }
+document.addEventListener('click', closeKebab);
+
 function populateDenomFilter() {
   const sel = document.getElementById('filterDenom');
   if (!sel) return; // denomination filter removed from UI
