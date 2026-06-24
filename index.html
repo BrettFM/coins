@@ -24,6 +24,8 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .header-logo { height: 52px; width: auto; max-width: 100%; display: block; }
 @media (max-width: 600px) { .header-logo { height: 40px; } }
 .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.header-actions select { background: var(--input-bg); border: 1px solid var(--card-border); color: var(--text); padding: 6px 8px; border-radius: 6px; font-size: 0.8rem; font-family: inherit; }
+.header-actions select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(154,117,32,0.15); }
 .stats-bar { display: flex; gap: 14px; padding: 16px 24px; flex-wrap: wrap; background: var(--bg-alt); border-bottom: 1px solid var(--card-border); }
 .stat-card { flex: 1; min-width: 130px; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px 16px; box-shadow: var(--shadow); }
 .stat-card .label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
@@ -221,11 +223,24 @@ td a:hover { text-decoration: underline; }
   <div class="header-actions">
     <div class="view-toggle">
       <button class="btn btn-outline active" id="btnGrid" onclick="setView('grid')">⊞ Grid</button>
-      <button class="btn btn-outline" id="btnTable" onclick="setView('table')">≡ Table</button>
       <button class="btn btn-outline" id="btnPage" onclick="setView('page')">📖 Page</button>
     </div>
+    <select id="filterStatus" onchange="applyFilters()">
+      <option value="all">All Coins</option>
+      <option value="Own">Owned</option>
+      <option value="Need">Wish List</option>
+    </select>
+    <select id="sortBy" onchange="applyFilters()">
+      <option value="book">Sort: Book / Page</option>
+      <option value="denom">Sort: Denomination</option>
+      <option value="year">Sort: Year</option>
+      <option value="grade">Sort: Grade</option>
+      <option value="value">Sort: Book Value ↓</option>
+      <option value="pl">Sort: P/L ↓</option>
+      <option value="name">Sort: Name</option>
+    </select>
     <span id="syncStatus" class="sync-status sync-offline">○ Local only</span>
-    <button class="btn btn-secondary btn-sm" onclick="openGistModal()">☁ Gist Sync</button>
+    <button class="btn btn-secondary btn-sm" onclick="openGistModal()">☁ Sync</button>
     <button class="btn btn-secondary btn-sm" onclick="openIOModal()">⬆⬇ Export / Import</button>
     <button class="btn btn-gold" onclick="openAddModal()">+ Add Coin</button>
   </div>
@@ -233,23 +248,6 @@ td a:hover { text-decoration: underline; }
 <div class="stats-bar" id="statsBar"></div>
 <div class="controls">
   <input type="text" id="searchInput" placeholder="🔍  Search coins..." oninput="applyFilters()">
-  <select id="filterStatus" onchange="applyFilters()">
-    <option value="all">All Coins</option>
-    <option value="Own">Owned</option>
-    <option value="Need">Wish List</option>
-  </select>
-  <select id="filterDenom" onchange="applyFilters()">
-    <option value="all">All Denominations</option>
-  </select>
-  <select id="sortBy" onchange="applyFilters()">
-    <option value="book">Sort: Book / Page</option>
-    <option value="denom">Sort: Denomination</option>
-    <option value="year">Sort: Year</option>
-    <option value="grade">Sort: Grade</option>
-    <option value="value">Sort: Book Value ↓</option>
-    <option value="pl">Sort: P/L ↓</option>
-    <option value="name">Sort: Name</option>
-  </select>
 </div>
 <div id="gridView" class="coins-grid"></div>
 <div id="tableView" class="coins-table-wrap" style="display:none"></div>
@@ -673,7 +671,7 @@ function renderStats() {
 function getFiltered() {
   const q = document.getElementById('searchInput').value.toLowerCase();
   const st = document.getElementById('filterStatus').value;
-  const dn = document.getElementById('filterDenom').value;
+  const dn = 'all'; // denomination filter removed from UI
   const sb = document.getElementById('sortBy').value;
   let f = coins.filter(c => {
     if (st !== 'all' && c['Status'] !== st) return false;
@@ -833,7 +831,6 @@ function setView(v) {
   document.getElementById('tableView').style.display = v==='table' ? 'block' : 'none';
   document.getElementById('pageView').style.display  = v==='page'  ? 'block' : 'none';
   document.getElementById('btnGrid').classList.toggle('active',  v==='grid');
-  document.getElementById('btnTable').classList.toggle('active', v==='table');
   document.getElementById('btnPage').classList.toggle('active',  v==='page');
   applyFilters();
 }
@@ -1261,6 +1258,7 @@ function openDetail(id) {
 // ---- ADD / EDIT ----
 function populateDenomFilter() {
   const sel = document.getElementById('filterDenom');
+  if (!sel) return; // denomination filter removed from UI
   [...new Set(coins.map(c=>c['Denomination']).filter(Boolean))].sort().forEach(d => {
     const o=document.createElement('option'); o.value=d; o.textContent=d; sel.appendChild(o);
   });
