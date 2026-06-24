@@ -1032,13 +1032,18 @@ function printPage(book, page) {
   const pageName = (pageCoins[1] && pageCoins[1]['_page_name']) ? pageCoins[1]['_page_name'] : '';
   const coverTitle = pageName || `Book ${book}, Page ${page}`;
 
-  // Find first owned coin with an obverse image for the cover
+  // Cover image: prefer the first OWNED coin with an obverse image; if the page
+  // has no owned coin with an image (e.g. an all-wishlist page), fall back to any
+  // coin's image so the cover isn't left as a placeholder.
   let coverImgUrl = '';
-  for (let sl = 1; sl <= 9; sl++) {
+  for (let sl = 1; sl <= 9 && !coverImgUrl; sl++) {
     const coin = pageCoins[sl];
-    if (coin && coin['Status'] === 'Own') {
-      const url = getObverseUrl(coin) || '';
-      if (url) { coverImgUrl = url; break; }
+    if (coin && coin['Status'] === 'Own') coverImgUrl = getObverseUrl(coin) || '';
+  }
+  if (!coverImgUrl) {
+    for (let sl = 1; sl <= 9 && !coverImgUrl; sl++) {
+      const coin = pageCoins[sl];
+      if (coin) coverImgUrl = getObverseUrl(coin) || '';
     }
   }
 
