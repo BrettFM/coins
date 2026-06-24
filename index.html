@@ -250,7 +250,7 @@ td a:hover { text-decoration: underline; }
       <option value="pl">Sort: P/L ↓</option>
       <option value="name">Sort: Name</option>
     </select>
-    <span id="syncStatus" class="sync-status sync-offline" onclick="openGistModal()" title="Sync settings">○ Local only</span>
+    <span id="syncStatus" class="sync-status sync-offline" onclick="onSyncClick()" title="Sync now">○ Local only</span>
     <div class="kebab-wrap">
       <button class="btn btn-secondary btn-sm" onclick="toggleKebab(event)" aria-label="More actions">⋯</button>
       <div class="kebab-menu" id="kebabMenu">
@@ -1272,6 +1272,20 @@ function openDetail(id) {
 }
 
 // ---- ADD / EDIT ----
+// Clicking the sync chip: sync immediately if connected, otherwise prompt for
+// credentials. Flushes any pending local change, then pulls the latest.
+async function onSyncClick() {
+  const { token, gistId } = getGistConfig();
+  if (!token || !gistId) { openGistModal(); return; }
+  if (_pendingSave) { clearTimeout(_gistSaveTimer); await saveToGist(); }
+  const latest = await loadFromGist();
+  if (latest) {
+    coins = latest;
+    localStorage.setItem('coinCollection', JSON.stringify(coins));
+    applyFilters();
+  }
+}
+
 // Overflow (⋯) menu for secondary actions
 function toggleKebab(e) { e.stopPropagation(); document.getElementById('kebabMenu').classList.toggle('open'); }
 function closeKebab() { const m = document.getElementById('kebabMenu'); if (m) m.classList.remove('open'); }
