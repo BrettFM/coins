@@ -247,7 +247,7 @@ td a:hover { text-decoration: underline; }
 <div class="header">
   <img src="./logo.png" alt="Brett's Coin Collection" class="header-logo">
   <div class="header-actions">
-    <select id="viewSelect" onchange="setView(this.value)">
+    <select id="viewSelect" autocomplete="off" onchange="setView(this.value)">
       <option value="grid">Grid</option>
       <option value="page">Page</option>
     </select>
@@ -1776,6 +1776,10 @@ document.getElementById('lightbox').addEventListener('click', function(e) {
 });
 
 populateDenomFilter(); populateEditDenom(); setView('grid');
+// Browsers can restore the previous <select> value on reload/bfcache, leaving
+// the grid hidden until the view is toggled. Force Grid + a fresh render once
+// the page is fully shown (covers normal loads and back/forward cache).
+window.addEventListener('pageshow', () => setView('grid'));
 
 // Async Gist load on startup + periodic poll
 (async () => {
